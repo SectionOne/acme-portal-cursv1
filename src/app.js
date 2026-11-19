@@ -39,26 +39,26 @@ function createApp() {
     });
   });
 
-  /**
-   * Invitacions.
-   * BUG DE CURSA: si es crida dues vegades molt ràpid amb el mateix email,
-   * es poden crear dos tokens (no hi ha bloqueig / comprovació atòmica).
-   */
+  /** Invitacions: check-and-set sense await entremig (evita cursa). */
   app.post('/api/invitations', requireAuth, async (req, res) => {
     const email = (req.body && req.body.email) || '';
     if (!email.includes('@')) {
       return res.status(400).json({ error: 'Email invàlid' });
     }
 
-    // Simula latència de xarxa / BD
+    // Simula latència de xarxa / BD (abans del check-and-set)
+    await delay(150);
     await delay(150);
 
-    if (invitations.has(email)) {
-      // En un fix correcte, aquí retornaríem 409 o el mateix token de forma segura.
-      // Ara mateix encara hi ha una finestra de cursa abans del .has (lab unitat 10 / 02).
+    const existing = invitations.get(email);
+    if (existing) {
+      return res.status(409).json({
+        error: 'Invitació ja existent',
+        email,
+        token: existing.token,
+      });
     }
 
-    await delay(150);
     const token = `inv_${Math.random().toString(36).slice(2)}_${Date.now()}`;
     invitations.set(email, { token, createdAt: Date.now() });
 

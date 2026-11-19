@@ -40,4 +40,47 @@ describe('ACME Portal', () => {
     expect(res.status).toBe(201);
     expect(res.body.ticketId).toMatch(/^T-/);
   });
+
+  test('invitació nova retorna 201', async () => {
+    const email = `nou-${Date.now()}@t.com`;
+    const res = await request(app)
+      .post('/api/invitations')
+      .set(auth)
+      .send({ email });
+    expect(res.status).toBe(201);
+    expect(res.body.email).toBe(email);
+    expect(res.body.token).toMatch(/^inv_/);
+  });
+
+  test('invitació duplicada seqüencial retorna 409 amb el mateix token', async () => {
+    const email = `dup-${Date.now()}@t.com`;
+    const first = await request(app)
+      .post('/api/invitations')
+      .set(auth)
+      .send({ email });
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post('/api/invitations')
+      .set(auth)
+      .send({ email });
+    expect(second.status).toBe(409);
+    expect(second.body.token).toBe(first.body.token);
+  });
+
+  test('invitacions concurrentes mateix email no creen dos tokens', async () => {
+    const email = `race-${Date.now()}@t.com`;
+    const [a, b] = await Promise.all([
+      request(app).post('/api/invitations').set(auth).send({ email }),
+      request(app).post('/api/invitations').set(auth).send({ email }),
+    ]);
+
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    expect(statuses).toEqual([201, 409]);
+    expect(a.body.token).toBe(b.body.token);
+
+    const stored = await request(app).get(`/api/invitations/${email}`).set(auth);
+    expect(stored.status).toBe(200);
+    expect(stored.body.token).toBe(a.body.token);
+  });
 });
